@@ -1,122 +1,104 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useCallback, useState } from "react";
+import { Chat } from "./components/Chat";
+import { ConnectionForm } from "./components/ConnectionForm";
+import { useNotifications } from "./hooks/useNotifications";
+import { sendTextMessage } from "./services/greenApi";
+import { createMessage } from "./utils/messages";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0)
+const EMPTY_CREDENTIALS = { idInstance: "", token: "" };
+
+export default function App() {
+  const [credentials, setCredentials] = useState(EMPTY_CREDENTIALS);
+  const [recipient, setRecipient] = useState("");
+  const [activeChatId, setActiveChatId] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [error, setError] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const isConnected = Boolean(
+    credentials.idInstance.trim() && credentials.token.trim(),
+  );
+
+  const handleIncomingMessage = useCallback((message) => {
+    setMessages((items) => {
+      const hasMessage = items.some(({ id }) => id === message.id);
+      return hasMessage ? items : [...items, message];
+    });
+  }, []);
+
+  const handleReceiveError = useCallback((message) => {
+    setError(message);
+  }, []);
+
+  useNotifications({
+    credentials,
+    chatId: activeChatId,
+    enabled: isConnected && Boolean(activeChatId),
+    onMessage: handleIncomingMessage,
+    onError: handleReceiveError,
+  });
+
+  function handleOpenChat(event) {
+    event.preventDefault();
+    if (!isConnected) return setError("Введите idInstance и apiTokenInstance");
+    const chatId = recipient.trim();
+    if (!chatId) return setError("Введите номер или chatId получателя");
+    setActiveChatId(chatId);
+    setMessages([]);
+    setError("");
+  }
+
+  async function handleSendMessage(text) {
+    if (!activeChatId || isSending) return;
+    setError("");
+    setIsSending(true);
+    try {
+      const { idMessage } = await sendTextMessage(
+        credentials,
+        activeChatId,
+        text,
+      );
+      setMessages((items) => [
+        ...items,
+        createMessage({ id: idMessage, text, direction: "outgoing" }),
+      ]);
+    } catch (requestError) {
+      setError(requestError.message || "Не удалось отправить сообщение");
+    } finally {
+      setIsSending(false);
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <main className="app-shell">
+      <aside className="setup-panel">
+        <div className="brand">
+          <span className="brand-mark">G</span>
+          <span>GREEN-API</span>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
+        <div className="setup-copy">
+          <p className="eyebrow">MAX messenger</p>
+          <h1>Сообщения без лишнего</h1>
+          <p>Введите данные инстанса и начните диалог.</p>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        <ConnectionForm
+          credentials={credentials}
+          recipient={recipient}
+          onCredentialsChange={setCredentials}
+          onRecipientChange={setRecipient}
+          onSubmit={handleOpenChat}
+        />
+        <p className="security-note">
+          Данные используются только в текущей вкладке и не сохраняются.
+        </p>
+      </aside>
+      <Chat
+        chatId={activeChatId}
+        messages={messages}
+        isSending={isSending}
+        error={error}
+        onSendMessage={handleSendMessage}
+      />
+    </main>
+  );
 }
-
-export default App
